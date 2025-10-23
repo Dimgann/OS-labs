@@ -1,0 +1,2 @@
+Stroka 1
+MEGA STRING
