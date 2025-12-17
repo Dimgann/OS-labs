@@ -20,7 +20,6 @@ typedef struct {
     float** dst_matrix;
     float* kernel;
     
-    // Примитивы синхронизации без barrier
     pthread_mutex_t* iter_mutex;
     pthread_cond_t* iter_cond;
     int* current_iter;
@@ -109,18 +108,15 @@ void* thread_func(void* arg) {
     ThreadData* data = (ThreadData*)arg;
     
     for (int iter = 0; iter < data->total_iterations; iter++) {
-        // Выполняем свою часть работы
         for (int i = data->start_row; i < data->end_row; i++) {
             apply_filter_row(i, data->rows, data->cols, data->window_size,
                            data->src_matrix, data->dst_matrix, data->kernel);
         }
         
-        // Сообщаем о завершении итерации
         pthread_mutex_lock(data->iter_mutex);
         (*data->threads_ready)++;
         
         if (*data->threads_ready == data->num_threads) {
-            // Все потоки завершили - меняем матрицы
             float** temp = data->src_matrix;
             data->src_matrix = data->dst_matrix;
             data->dst_matrix = temp;
@@ -128,10 +124,8 @@ void* thread_func(void* arg) {
             (*data->current_iter)++;
             *data->threads_ready = 0;
             
-            // Будим все потоки
             pthread_cond_broadcast(data->iter_cond);
         } else {
-            // Ждем завершения других потоков
             while (*data->current_iter <= iter) {
                 pthread_cond_wait(data->iter_cond, data->iter_mutex);
             }
@@ -163,11 +157,9 @@ void sequential_filter(float** src, float** dst, int rows, int cols,
 
 void parallel_filter(float** src, float** dst, int rows, int cols,
                      int window_size, int iterations, float* kernel, int num_threads) {
-    // Создаем копии для работы
     float** src_copy = copy_matrix(src, rows, cols);
     float** dst_copy = create_matrix(rows, cols);
     
-    // Инициализация примитивов синхронизации (важно для TSan!)
     pthread_mutex_t iter_mutex = PTHREAD_MUTEX_INITIALIZER;
     pthread_cond_t iter_cond = PTHREAD_COND_INITIALIZER;
     
@@ -207,12 +199,10 @@ void parallel_filter(float** src, float** dst, int rows, int cols,
         pthread_join(threads[i], NULL);
     }
     
-    // Копируем результат
     for (int i = 0; i < rows; i++) {
         memcpy(dst[i], dst_copy[i], cols * sizeof(float));
     }
     
-    // Освобождаем ресурсы
     pthread_mutex_destroy(&iter_mutex);
     pthread_cond_destroy(&iter_cond);
     free_matrix(src_copy, rows);
